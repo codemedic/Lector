@@ -27,4 +27,12 @@ script:
   - wget -c "https://raw.githubusercontent.com/BasioMeusPuga/Lector/ed5bc0b2b9b92a506d4eb2144e349075caf3a8c0/lector/resources/raw/Lector.png" -O app.png
   - convert app.png -resize 512x512 $APPNAME.png
   - ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin conda -i $APPNAME.png -d $(readlink -f "$APPNAME.desktop") --custom-apprun AppRun --output appimage
-  - ls -lh .
+
+after_success:
+  - wget -c https://github.com/probonopd/uploadtool/raw/master/upload.sh
+  - bash upload.sh Lector*.AppImage*
+  
+branches:
+  except:
+    - # Do not build tags that we create when we upload to GitHub Releases
+    - /^(?i:continuous)/
