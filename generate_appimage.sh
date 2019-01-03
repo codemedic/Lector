@@ -23,7 +23,7 @@ sed -i -e 's|Icon=L|Icon=l|g' lector.desktop # FIXME
 cat > AppRun <<\EOF
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
-exec "$HERE/usr/conda/bin/python" "$HERE/usr/conda/bin/lector" "$@"
+exec "$HERE/usr/conda/bin/python" "$HERE/usr/conda/lib/python3.7/site-packages/lector/__main__.py" "$@"
 EOF
 chmod +x AppRun
 
@@ -31,3 +31,9 @@ wget -c "https://raw.githubusercontent.com/BasioMeusPuga/Lector/ed5bc0b2b9b92a50
 convert app.png -resize 512x512 $APPNAME.png
 
 ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin conda -i $APPNAME.png -d $(readlink -f "$APPNAME.desktop") --custom-apprun AppRun --output appimage
+
+# Fix the AppImage; https://github.com/linuxdeploy/linuxdeploy-plugin-conda/issues/15#issuecomment-451270027
+./Lector-*.AppImage --appimage-extract
+cp -r src/lector/lector squashfs-root/usr/conda/lib/python3.7/site-packages/
+rm squashfs-root/usr/conda/lib/python3.7/site-packages/lector.egg-link 
+rm squashfs-root/usr/conda/lib/python3.7/site-packages/easy-install.pth 
