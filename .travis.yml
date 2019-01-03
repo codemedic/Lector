@@ -8,6 +8,7 @@ install:
 
 script:
   - sudo rm -rf /usr/bin/py* /usr/lib/py* /usr/lib/x86_64-linux-gnu/libpy* # DON'T TRY THIS AT HOME
+  - sudo find /usr -type f -name '*setuptools*' -delete # DON'T TRY THIS AT HOME
   - bash -x generate_appimage.sh
   - ls -l *
   
