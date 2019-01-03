@@ -17,6 +17,7 @@ chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-conda.sh
 rm -r AppDir || true
 
 wget -c "https://github.com/BasioMeusPuga/Lector/raw/master/lector/resources/raw/lector.desktop"
+sed -i -e 's|Icon=L|Icon=l|g' lector.desktop # FIXME
 
 cat > AppRun <<\EOF
 #!/bin/bash
