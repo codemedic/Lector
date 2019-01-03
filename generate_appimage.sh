@@ -34,6 +34,6 @@ convert app.png -resize 512x512 $APPNAME.png
 
 # Fix the AppImage; https://github.com/linuxdeploy/linuxdeploy-plugin-conda/issues/15#issuecomment-451270027
 ./Lector-*.AppImage --appimage-extract
-cp -r src/lector/lector squashfs-root/usr/conda/lib/python3.7/site-packages/
+cp -r ./lector squashfs-root/usr/conda/lib/python3.7/site-packages/
 rm squashfs-root/usr/conda/lib/python3.7/site-packages/lector.egg-link 
 rm squashfs-root/usr/conda/lib/python3.7/site-packages/easy-install.pth 
