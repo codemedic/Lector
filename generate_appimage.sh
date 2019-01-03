@@ -33,9 +33,11 @@ convert app.png -resize 512x512 $APPNAME.png
 ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin conda -i $APPNAME.png -d $(readlink -f "$APPNAME.desktop") --custom-apprun AppRun --output appimage
 
 # Fix the AppImage; https://github.com/linuxdeploy/linuxdeploy-plugin-conda/issues/15#issuecomment-451270027
+# All of the below should be done above!
 ./Lector-*.AppImage --appimage-extract
 cp -r ./lector squashfs-root/usr/conda/lib/python3.7/site-packages/
 rm squashfs-root/usr/conda/lib/python3.7/site-packages/lector.egg-link 
 rm squashfs-root/usr/conda/lib/python3.7/site-packages/easy-install.pth 
-
-./linuxdeploy-x86_64.AppImage -g ./squashfs-root
+wget -c "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+chmod +x ./appimagetool-x86_64.AppImage
+./appimagetool-x86_64.AppImage -g ./squashfs-root
