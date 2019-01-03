@@ -7,7 +7,6 @@ install:
   - sudo apt -y install git imagemagick
 
 script:
-  - sudo apt -y install git imagemagick
   - export VERSION=$(wget -q "https://api.github.com/repos/BasioMeusPuga/Lector/commits?sha=master" -O - | grep sha | head -n 1 | cut -d '"' -f 4 | head -c 7
   - )
   - export APPNAME=lector
@@ -19,11 +18,12 @@ script:
   - chmod +x linuxdeploy-x86_64.AppImage linuxdeploy-plugin-conda.sh
   - rm -r AppDir || true
   - wget -c "https://github.com/BasioMeusPuga/Lector/raw/master/lector/resources/raw/lector.desktop"
-  - cat > AppRun <<EOF
-  - #!/bin/bash
-  - HERE="\$(dirname "\$(readlink -f "\${0}")")"
-  - exec "\$HERE/usr/conda/bin/python" "\$HERE/usr/conda/bin/$APPNAME" "\$@"
-  - EOF
+  - |
+    cat > AppRun <<EOF
+    #!/bin/bash
+    HERE="\$(dirname "\$(readlink -f "\${0}")")"
+    exec "\$HERE/usr/conda/bin/python" "\$HERE/usr/conda/bin/$APPNAME" "\$@"
+    EOF
   - chmod +x AppRun
   - wget -c "https://raw.githubusercontent.com/BasioMeusPuga/Lector/ed5bc0b2b9b92a506d4eb2144e349075caf3a8c0/lector/resources/raw/Lector.png" -O app.png
   - convert app.png -resize 512x512 $APPNAME.png
