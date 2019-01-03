@@ -37,3 +37,5 @@ convert app.png -resize 512x512 $APPNAME.png
 cp -r ./lector squashfs-root/usr/conda/lib/python3.7/site-packages/
 rm squashfs-root/usr/conda/lib/python3.7/site-packages/lector.egg-link 
 rm squashfs-root/usr/conda/lib/python3.7/site-packages/easy-install.pth 
+
+./linuxdeploy-x86_64.AppImage -g ./squashfs-root
