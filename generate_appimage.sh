@@ -6,9 +6,9 @@ export VERSION=$(wget -q "https://api.github.com/repos/BasioMeusPuga/Lector/comm
 )
 
 export APPNAME=lector
-export PIP_REQUIREMENTS="-e git+https://github.com/BasioMeusPuga/Lector#egg=$APPNAME"
+export PIP_REQUIREMENTS="PyQt5 -e git+https://github.com/BasioMeusPuga/Lector#egg=$APPNAME"
 export CONDA_CHANNELS="conda-forge"
-export CONDA_PACKAGES="pyqt;beautifulsoup4;xorg-libxi"  # Only use this if the package is in a Conda channel (e.g., conda-forge); can also be used for dependencies if the main application has no depends.txt
+export CONDA_PACKAGES="beautifulsoup4;xorg-libxi"  # Only use this if the package is in a Conda channel (e.g., conda-forge); can also be used for dependencies if the main application has no depends.txt
 export VERSION=$(git rev-parse --short HEAD) # linuxdeployqt uses this for naming the file
 
 wget -c "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
