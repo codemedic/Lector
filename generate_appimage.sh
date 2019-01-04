@@ -37,7 +37,9 @@ convert app.png -resize 512x512 $APPNAME.png
 ./Lector-*.AppImage --appimage-extract
 cp -r ./lector squashfs-root/usr/conda/lib/python3.7/site-packages/
 rm squashfs-root/usr/conda/lib/python3.7/site-packages/lector.egg-link 
-rm squashfs-root/usr/conda/lib/python3.7/site-packages/easy-install.pth 
+rm squashfs-root/usr/conda/lib/python3.7/site-packages/easy-install.pth
+( cd squashfs-root/usr/conda/bin/ ; ln -s ../plugins/platforms/ . ) # FIXME
+
 wget -c "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
 chmod +x ./appimagetool-x86_64.AppImage
 ./appimagetool-x86_64.AppImage -g ./squashfs-root
