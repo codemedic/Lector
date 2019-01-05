@@ -4,7 +4,7 @@ sudo: require
 dist: trusty
 
 install:
-  - sudo apt -y install git imagemagick
+  - sudo apt -y install git imagemagick libpoppler-dev
 
 script:
   - bash -x generate_appimage.sh
