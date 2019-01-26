@@ -1,5 +1,5 @@
 # This file is a part of Lector, a Qt based ebook reader
-# Copyright (C) 2017-2018 BasioMeusPuga
+# Copyright (C) 2017-2019 BasioMeusPuga
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,8 +17,11 @@
 import os
 import base64
 import zipfile
+import logging
 
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 
 class FB2:
@@ -83,7 +86,9 @@ class FB2:
             for i in cover_image_data:
                 if cover_image_name.endswith(i.get('id')):
                     self.book['cover'] = base64.decodebytes(i.text.encode())
-        except AttributeError:
+        except (AttributeError, TypeError):
+            # Catch TypeError in case no images exist in the book
+            logger.error('No cover found for: ' + self.filename)
             self.book['cover'] = None
 
     def parse_chapters(self, temp_dir):
@@ -114,3 +119,11 @@ class FB2:
                     outimage.write(image_data)
             except AttributeError:
                 pass
+
+        # Insert the book cover at the beginning
+        if self.book['cover']:
+            cover_path = os.path.join(temp_dir, 'cover')
+            with open(cover_path, 'wb') as outimage:
+                outimage.write(self.book['cover'])
+            self.book['book_list'].insert(
+                0, ('Cover', f'<center><img src="{cover_path}" alt="Cover"></center>'))

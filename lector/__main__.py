@@ -29,6 +29,13 @@ install_dir = os.path.realpath(__file__)
 install_dir = pathlib.Path(install_dir).parents[1]
 sys.path.append(str(install_dir))
 
+# Init logging
+# Must be done first and at the module level
+# or it won't work properly in case of the imports below
+from lector.logger import init_logging
+logger = init_logging(sys.argv)
+logger.log(60, 'Application started')
+
 from PyQt5 import QtWidgets, QtGui, QtCore
 
 from lector import database
@@ -171,25 +178,28 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
             self.libraryToolBar.tableViewButton.trigger()
 
         # Book toolbar
-        self.bookToolBar.annotationButton.triggered.connect(self.toggle_side_dock)
         self.bookToolBar.addBookmarkButton.triggered.connect(self.add_bookmark)
-        self.bookToolBar.bookmarkButton.triggered.connect(self.toggle_side_dock)
+        self.bookToolBar.bookmarkButton.triggered.connect(
+            lambda: self.tabWidget.currentWidget().toggle_side_dock(0))
+        self.bookToolBar.annotationButton.triggered.connect(
+            lambda: self.tabWidget.currentWidget().toggle_side_dock(1))
+        self.bookToolBar.searchButton.triggered.connect(
+            lambda: self.tabWidget.currentWidget().toggle_side_dock(2))
         self.bookToolBar.distractionFreeButton.triggered.connect(self.toggle_distraction_free)
         self.bookToolBar.fullscreenButton.triggered.connect(self.set_fullscreen)
 
-        self.bookToolBar.singlePageButton.triggered.connect(self.change_page_view)
         self.bookToolBar.doublePageButton.triggered.connect(self.change_page_view)
-        if self.settings['page_view_button'] == 'singlePageButton':
-            self.bookToolBar.singlePageButton.setChecked(True)
-        else:
+        self.bookToolBar.mangaModeButton.triggered.connect(self.change_page_view)
+        if self.settings['double_page_mode']:
             self.bookToolBar.doublePageButton.setChecked(True)
+        if self.settings['manga_mode']:
+            self.bookToolBar.mangaModeButton.setChecked(True)
 
         for count, i in enumerate(self.display_profiles):
             self.bookToolBar.profileBox.setItemData(count, i, QtCore.Qt.UserRole)
         self.bookToolBar.profileBox.currentIndexChanged.connect(
             self.profile_functions.format_contentView)
         self.bookToolBar.profileBox.setCurrentIndex(self.current_profile_index)
-        self.bookToolBar.searchBar.textChanged.connect(self.search_book)
 
         self.bookToolBar.fontBox.currentFontChanged.connect(self.modify_font)
         self.bookToolBar.fontSizeBox.currentIndexChanged.connect(self.modify_font)
@@ -207,36 +217,42 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
             i[1].triggered.connect(self.modify_font)
         self.alignment_dict[current_profile['text_alignment']].setChecked(True)
 
-        self.bookToolBar.zoomIn.triggered.connect(self.modify_comic_view)
-        self.bookToolBar.zoomOut.triggered.connect(self.modify_comic_view)
-        self.bookToolBar.fitWidth.triggered.connect(self.modify_comic_view)
-        self.bookToolBar.bestFit.triggered.connect(self.modify_comic_view)
-        self.bookToolBar.originalSize.triggered.connect(self.modify_comic_view)
-        self.bookToolBar.comicBGColor.clicked.connect(self.get_color)
+        self.bookToolBar.zoomIn.triggered.connect(
+            self.modify_comic_view)
+        self.bookToolBar.zoomOut.triggered.connect(
+            self.modify_comic_view)
+        self.bookToolBar.fitWidth.triggered.connect(
+            lambda: self.modify_comic_view(False))
+        self.bookToolBar.bestFit.triggered.connect(
+            lambda: self.modify_comic_view(False))
+        self.bookToolBar.originalSize.triggered.connect(
+            lambda: self.modify_comic_view(False))
+        self.bookToolBar.comicBGColor.clicked.connect(
+            self.get_color)
 
         self.bookToolBar.colorBoxFG.clicked.connect(self.get_color)
         self.bookToolBar.colorBoxBG.clicked.connect(self.get_color)
         self.bookToolBar.tocBox.currentIndexChanged.connect(self.set_toc_position)
         self.addToolBar(self.bookToolBar)
 
-        # Get the stylesheet of the default QLineEdit
-        self.lineEditStyleSheet = self.bookToolBar.searchBar.styleSheet()
-
         # Make the correct toolbar visible
         self.current_tab = self.tabWidget.currentIndex()
         self.tab_switch()
         self.tabWidget.currentChanged.connect(self.tab_switch)
 
-        # Tab closing
+        # Tab Widget formatting
         self.tabWidget.setTabsClosable(True)
+        self.tabWidget.setDocumentMode(True)
+        self.tabWidget.tabBarClicked.connect(self.tab_disallow_library_movement)
 
         # Get list of available parsers
         self.available_parsers = '*.' + ' *.'.join(sorter.available_parsers)
-        print('Available parsers: ' + self.available_parsers)
+        logger.info('Available parsers: ' + self.available_parsers)
 
         # The Library tab gets no button
         self.tabWidget.tabBar().setTabButton(
             0, QtWidgets.QTabBar.RightSide, None)
+        self.tabWidget.widget(0).is_library = True
         self.tabWidget.tabCloseRequested.connect(self.tab_close)
         self.tabWidget.setTabBarAutoHide(True)
 
@@ -398,11 +414,8 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
         if not file_paths:
             return
 
-        def finishing_touches():
-            self.profile_functions.format_contentView()
-            self.start_culling_timer()
-
-        print('Attempting to open: ' + ', '.join(file_paths))
+        logger.info(
+            'Attempting to open: ' + ', '.join(file_paths))
 
         contents = sorter.BookSorter(
             file_paths,
@@ -415,13 +428,18 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
         # Notification feedback in case all books return nothing
 
         if not contents:
+            logger.error('No parseable files found')
             return
 
+        successfully_opened = []
         for i in contents:
             # New tabs are created here
             # Initial position adjustment is carried out by the tab itself
             file_data = contents[i]
             Tab(file_data, self)
+            successfully_opened.append(file_data['path'])
+        logger.info(
+            'Successfully opened: ' + ', '.join(file_paths))
 
         if self.settings['last_open_tab'] == 'library':
             self.tabWidget.setCurrentIndex(0)
@@ -434,11 +452,9 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
             if self.settings['last_open_tab'] == this_path:
                 self.tabWidget.setCurrentIndex(i)
                 self.settings['last_open_tab'] = None
-                finishing_touches()
                 return
 
         self.tabWidget.setCurrentIndex(self.tabWidget.count() - 1)
-        finishing_touches()
 
     def start_culling_timer(self):
         if self.settings['perform_culling']:
@@ -457,7 +473,7 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
 
         # The hackiness of this hack is just...
         default_size = 170  # This is size of the QIcon (160 by default) +
-                            # minimum margin is needed between thumbnails
+                            # minimum margin needed between thumbnails
 
         # for n icons, the n + 1th icon will appear at > n +1.11875
         # First, calculate the number of images per row
@@ -607,6 +623,12 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
 
     def tab_switch(self):
         try:
+            # Disallow library tab movement
+            # Does not need to be looped since the library
+            # tab can only ever go to position 1
+            if not self.tabWidget.widget(0).is_library:
+                self.tabWidget.tabBar().moveTab(1, 0)
+
             if self.current_tab != 0:
                 self.tabWidget.widget(
                     self.current_tab).update_last_accessed_time()
@@ -615,14 +637,15 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
 
         self.current_tab = self.tabWidget.currentIndex()
 
-        # Hide bookmark and annotation widgets
+        # Hide all side docks whenever a tab is switched
         for i in range(1, self.tabWidget.count()):
             self.tabWidget.widget(i).sideDock.setVisible(False)
 
+        # If library
         if self.tabWidget.currentIndex() == 0:
-
             self.resizeEvent()
             self.start_culling_timer()
+
             if self.settings['show_bars']:
                 self.bookToolBar.hide()
                 self.libraryToolBar.show()
@@ -638,33 +661,34 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
                 self.statusBar.setVisible(True)
 
         else:
-
             if self.settings['show_bars']:
                 self.bookToolBar.show()
                 self.libraryToolBar.hide()
 
             current_tab = self.tabWidget.currentWidget()
-            current_metadata = current_tab.metadata
+            self.bookToolBar.tocBox.setModel(current_tab.tocModel)
+            self.bookToolBar.tocTreeView.expandAll()
+            current_tab.set_tocBox_index(None, None)
+
+            # Needed to set the contentView widget background
+            # on first run. Subsequent runs might be redundant,
+            # but it doesn't seem to visibly affect performance
+            self.profile_functions.format_contentView()
+            self.statusBar.setVisible(False)
 
             if self.bookToolBar.fontButton.isChecked():
                 self.bookToolBar.customize_view_on()
-
-            current_position = current_metadata['position']
-            current_toc = [i[0] for i in current_metadata['content']]
-
-            self.bookToolBar.tocBox.blockSignals(True)
-            self.bookToolBar.tocBox.clear()
-            self.bookToolBar.tocBox.addItems(current_toc)
-            if current_position:
-                self.bookToolBar.tocBox.setCurrentIndex(
-                    current_position['current_chapter'] - 1)
-                if not current_metadata['images_only']:
-                    current_tab.hiddenButton.animateClick(25)
-            self.bookToolBar.tocBox.blockSignals(False)
-
-            self.profile_functions.format_contentView()
-
-            self.statusBar.setVisible(False)
+            else:
+                if current_tab.are_we_doing_images_only:
+                    self.bookToolBar.searchButton.setVisible(False)
+                    self.bookToolBar.annotationButton.setVisible(False)
+                    self.bookToolBar.bookSeparator2.setVisible(False)
+                    self.bookToolBar.bookSeparator3.setVisible(False)
+                else:
+                    self.bookToolBar.searchButton.setVisible(True)
+                    self.bookToolBar.annotationButton.setVisible(True)
+                    self.bookToolBar.bookSeparator2.setVisible(True)
+                    self.bookToolBar.bookSeparator3.setVisible(True)
 
     def tab_close(self, tab_index=None):
         if not tab_index:
@@ -684,32 +708,26 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
         self.tabWidget.widget(tab_index).setParent(None)
         gc.collect()
 
+    def tab_disallow_library_movement(self, tab_index):
+        # Makes the library tab immovable
+        if tab_index == 0:
+            self.tabWidget.setMovable(False)
+        else:
+            self.tabWidget.setMovable(True)
+
     def set_toc_position(self, event=None):
+        currentIndex = self.bookToolBar.tocTreeView.currentIndex()
+        required_position = currentIndex.data(QtCore.Qt.UserRole)
+        if not required_position:
+            return  # Initial startup might return a None
+
+        # The set_content method is universal
+        # It's going to do position tracking
         current_tab = self.tabWidget.currentWidget()
-
-        current_tab.metadata[
-            'position']['current_chapter'] = event + 1
-        current_tab.metadata[
-            'position']['is_read'] = False
-
-        # Go on to change the value of the Table of Contents box
-        current_tab.change_chapter_tocBox()
-        current_tab.contentView.record_position()
-
-        self.profile_functions.format_contentView()
+        current_tab.set_content(required_position)
 
     def set_fullscreen(self):
         self.tabWidget.currentWidget().go_fullscreen()
-
-    def toggle_side_dock(self):
-        # Tab indices are fixed
-        # 0 = Annotations
-        # 1 = Bookmarks
-        sender = self.sender()
-        if sender == self.bookToolBar.annotationButton:
-            self.tabWidget.currentWidget().toggle_side_dock(0)
-        if sender == self.bookToolBar.bookmarkButton:
-            self.tabWidget.currentWidget().toggle_side_dock(1)
 
     def library_doubleclick(self, index):
         sender = self.sender().objectName()
@@ -760,37 +778,28 @@ class MainUI(QtWidgets.QMainWindow, mainwindow.Ui_MainWindow):
 
     #____________________________________________
 
-    def change_page_view(self):
-        self.settings['page_view_button'] = self.sender().objectName()
-        chapter_number = self.bookToolBar.tocBox.currentIndex()
+    def change_page_view(self, key_pressed=False):
+        # Set zoom mode to best fit to
+        # make the transition less jarring
+        self.comic_profile['zoom_mode'] = 'bestFit'
+
+        # Toggle Double page mode / manga mode on keypress
+        if key_pressed == QtCore.Qt.Key_D:
+            self.bookToolBar.doublePageButton.setChecked(
+                not self.bookToolBar.doublePageButton.isChecked())
+        if key_pressed == QtCore.Qt.Key_M:
+            self.bookToolBar.mangaModeButton.setChecked(
+                not self.bookToolBar.mangaModeButton.isChecked())
+
+        # Change settings according to the
+        # current state of each of the toolbar buttons
+        self.settings['double_page_mode'] = self.bookToolBar.doublePageButton.isChecked()
+        self.settings['manga_mode'] = self.bookToolBar.mangaModeButton.isChecked()
 
         # Switch page to whatever index is selected in the tocBox
         current_tab = self.tabWidget.currentWidget()
-        required_content = current_tab.metadata['content'][chapter_number][1]
-        current_tab.contentView.loadImage(required_content)
-
-    def search_book(self, search_text):
-        if not (self.tabWidget.currentIndex() != 0
-                and not self.tabWidget.currentWidget().are_we_doing_images_only):
-            return
-
-        contentView = self.tabWidget.currentWidget().contentView
-
-        text_cursor = contentView.textCursor()
-        something_found = True
-        if search_text:
-            text_cursor.setPosition(0, QtGui.QTextCursor.MoveAnchor)
-            contentView.setTextCursor(text_cursor)
-            contentView.verticalScrollBar().setValue(contentView.verticalScrollBar().maximum())
-            something_found = contentView.find(search_text)
-        else:
-            text_cursor.clearSelection()
-            contentView.setTextCursor(text_cursor)
-
-        if not something_found:
-            self.bookToolBar.searchBar.setStyleSheet("QLineEdit {color: red;}")
-        else:
-            self.bookToolBar.searchBar.setStyleSheet(self.lineEditStyleSheet)
+        chapter_number = current_tab.metadata['position']['current_chapter']
+        current_tab.set_content(chapter_number, False)
 
     def generate_library_context_menu(self, position):
         index = self.sender().indexAt(position)
@@ -1028,10 +1037,10 @@ def main():
         QtCore.QLocale.system(), ':/translations/translations_bin/Lector_')
     app.installTranslator(translator)
 
-    translations_out_string = '(Translations found)'
+    translations_out_string = ' (Translations found)'
     if not translations_found:
-        translations_out_string = '(No translations found)'
-    print(f'Locale: {QtCore.QLocale.system().name()}', translations_out_string)
+        translations_out_string = ' (No translations found)'
+    print(f'Locale: {QtCore.QLocale.system().name()}' + translations_out_string)
 
     form = MainUI()
     form.show()

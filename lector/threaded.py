@@ -15,13 +15,18 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import re
+import logging
 import pathlib
-
 from multiprocessing.dummy import Pool
+
 from PyQt5 import QtCore, QtGui
 
 from lector import sorter
 from lector import database
+from lector.parsers.pdf import render_pdf_page
+
+logger = logging.getLogger(__name__)
 
 
 class BackGroundTabUpdate(QtCore.QThread):
@@ -120,9 +125,13 @@ class BackGroundBookSearch(QtCore.QThread):
 
         if self.valid_directories:
             initiate_threads()
-            print(len(self.valid_files), 'books found')
+            if self.valid_files:
+                info_string = str(len(self.valid_files)) + ' books found'
+                logger.info(info_string)
+            else:
+                logger.error('No books found on scan')
         else:
-            print('No valid directories')
+            logger.error('No valid directories')
 
 
 class BackGroundCacheRefill(QtCore.QThread):
@@ -141,16 +150,17 @@ class BackGroundCacheRefill(QtCore.QThread):
 
     def run(self):
         def load_page(current_page):
-            image_pixmap = QtGui.QPixmap()
+            pixmap = QtGui.QPixmap()
 
             if self.filetype in ('cbz', 'cbr'):
                 page_data = self.book.read(current_page)
-                image_pixmap.loadFromData(page_data)
+                pixmap.loadFromData(page_data)
+
             elif self.filetype == 'pdf':
-                page_data = self.book.page(current_page)
-                page_qimage = page_data.renderToImage(400, 400)  # TODO Readjust
-                image_pixmap.convertFromImage(page_qimage)
-            return image_pixmap
+                page_data = self.book.loadPage(current_page)
+                pixmap = render_pdf_page(page_data)
+
+            return pixmap
 
         remove_index = self.image_cache.index(self.remove_value)
 
@@ -171,3 +181,86 @@ class BackGroundCacheRefill(QtCore.QThread):
                 self.image_cache.append((next_page, refill_pixmap))
             except (IndexError, TypeError):
                 self.image_cache.append(None)
+
+
+class BackGroundTextSearch(QtCore.QThread):
+    def __init__(self):
+        super(BackGroundTextSearch, self).__init__(None)
+        self.search_content = None
+        self.search_text = None
+        self.case_sensitive = False
+        self.match_words = False
+        self.search_results = []
+
+    def set_search_options(
+            self, search_content, search_text,
+            case_sensitive, match_words):
+        self.search_content = search_content
+        self.search_text = search_text
+        self.case_sensitive = case_sensitive
+        self.match_words = match_words
+
+    def run(self):
+        if not self.search_text or len(self.search_text) < 3:
+            return
+
+        def get_surrounding_text(textCursor, words_before):
+            textCursor.movePosition(
+                QtGui.QTextCursor.WordLeft,
+                QtGui.QTextCursor.MoveAnchor,
+                words_before)
+            textCursor.movePosition(
+                QtGui.QTextCursor.NextWord,
+                QtGui.QTextCursor.KeepAnchor,
+                words_before * 2)
+            cursor_selection = textCursor.selection().toPlainText()
+            return cursor_selection.replace('\n', '')
+
+        self.search_results = {}
+
+        # Create a new QTextDocument of each chapter and iterate
+        # through it looking for hits
+
+        for i in self.search_content:
+            chapter_title = i[0]
+            chapterDocument = QtGui.QTextDocument()
+            chapterDocument.setHtml(i[1])
+            chapter_number = i[2]
+
+            findFlags = QtGui.QTextDocument.FindFlags(0)
+            if self.match_words:
+                findFlags = findFlags | QtGui.QTextDocument.FindWholeWords
+            if self.case_sensitive:
+                findFlags = findFlags | QtGui.QTextDocument.FindCaseSensitively
+
+            findResultCursor = chapterDocument.find(self.search_text, 0, findFlags)
+            while not findResultCursor.isNull():
+                result_position = findResultCursor.position()
+
+                words_before = 3
+                while True:
+                    surroundingTextCursor = QtGui.QTextCursor(chapterDocument)
+                    surroundingTextCursor.setPosition(
+                        result_position, QtGui.QTextCursor.MoveAnchor)
+                    surrounding_text = get_surrounding_text(
+                        surroundingTextCursor, words_before)
+                    words_before += 1
+                    if surrounding_text[:2] not in ('. ', ', '):
+                        break
+
+                # Case insensitive replace for find results
+                replace_pattern = re.compile(re.escape(self.search_text), re.IGNORECASE)
+                surrounding_text = replace_pattern.sub(
+                    f'<b>{self.search_text}</b>', surrounding_text)
+
+                result_tuple = (
+                    result_position, surrounding_text, self.search_text, chapter_number)
+
+                try:
+                    self.search_results[chapter_title].append(result_tuple)
+                except KeyError:
+                    self.search_results[chapter_title] = [result_tuple]
+
+                new_position = result_position + len(self.search_text)
+                findResultCursor = chapterDocument.find(
+                    self.search_text, new_position, findFlags)

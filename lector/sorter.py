@@ -36,8 +36,10 @@ import os
 import sys
 import time
 import pickle
+import logging
 import hashlib
 import threading
+import importlib
 
 # The multiprocessing module does not work correctly on Windows
 if sys.platform.startswith('win'):
@@ -53,24 +55,40 @@ from lector.parsers.mobi import ParseMOBI
 from lector.parsers.fb2 import ParseFB2
 from lector.parsers.comicbooks import ParseCOMIC
 
+logger = logging.getLogger(__name__)
+
 sorter = {
-    'epub': ParseEPUB,
-    'mobi': ParseMOBI,
-    'azw': ParseMOBI,
-    'azw3': ParseMOBI,
-    'azw4': ParseMOBI,
-    'prc': ParseMOBI,
-    'fb2': ParseFB2,
-    'fb2.zip': ParseFB2,
     'cbz': ParseCOMIC,
     'cbr': ParseCOMIC}
 
-# The following imports are for optional dependencies
-try:
+# Check what dependencies are installed
+# pymupdf - Optional
+mupdf_check = importlib.util.find_spec('fitz')
+if mupdf_check:
     from lector.parsers.pdf import ParsePDF
     sorter['pdf'] = ParsePDF
-except ImportError:
-    print('python-poppler-qt5 is not installed. Pdf files will not work.')
+else:
+    error_string = 'pymupdf is not installed. Will be unable to load PDFs.'
+    print(error_string)
+    logger.error(error_string)
+
+# python-lxml - Required for everything except comics
+lxml_check = importlib.util.find_spec('lxml')
+if lxml_check:
+    lxml_dependent = {
+        'epub': ParseEPUB,
+        'mobi': ParseMOBI,
+        'azw': ParseMOBI,
+        'azw3': ParseMOBI,
+        'azw4': ParseMOBI,
+        'prc': ParseMOBI,
+        'fb2': ParseFB2,
+        'fb2.zip': ParseFB2}
+    sorter.update(lxml_dependent)
+else:
+    critical_sting = 'python-lxml is not installed. Only comics will load.'
+    print(critical_sting)
+    logger.critical(critical_sting)
 
 available_parsers = [i for i in sorter]
 progressbar = None  # This is populated by __main__
@@ -172,7 +190,8 @@ class BookSorter:
                     or os.path.exists(self.hashes_and_paths[file_md5])):
 
                 if not self.hashes_and_paths[file_md5] == filename:
-                    print(f'{os.path.basename(filename)} is already in database')
+                    warning_string = f'{os.path.basename(filename)} is already in database'
+                    logger.warning(warning_string)
                 return
 
         # This allows for eliminating issues with filenames that have
@@ -185,15 +204,21 @@ class BookSorter:
                 break
 
         if not valid_extension:
-            print(filename + ' has an unsupported extension')
+            logger.error(filename + ' has an unsupported extension')
             return
 
         book_ref = sorter[file_extension](filename, self.temp_dir, file_md5)
 
         # Everything following this is standard
         # None values are accounted for here
-        book_ref.read_book()
+        is_valid = book_ref.read_book()
+        if not is_valid:
+            logger.error('Cannot parse:' + filename)
+            return
+
         if book_ref.book:
+            # TODO
+            # For the love of God clean this up. It's junk.
 
             this_book = {}
             this_book[file_md5] = {
@@ -223,18 +248,13 @@ class BookSorter:
                 this_book[file_md5]['addition_mode'] = self.addition_mode
 
             if self.work_mode == 'reading':
-                all_content = book_ref.get_contents()
+                # All books must return the following list
+                # Indices are as described below
+                book_breakdown = book_ref.get_contents()
 
-                # get_contents() returns a tuple. Index 1 is a collection of
-                # special settings that depend on the kind of data being parsed.
-                # Currently, this includes:
-                # Only images included      images_only     BOOL    Book contains only images
-
-                content = all_content[0]
-                images_only = all_content[1]['images_only']
-
-                if not content:
-                    content = [('Invalid', 'Something went horribly wrong')]
+                toc = book_breakdown[0]
+                content = book_breakdown[1]
+                images_only = book_breakdown[2]
 
                 book_data = self.database_entry_for_book(file_md5)
                 title = book_data[0]
@@ -249,6 +269,7 @@ class BookSorter:
 
                 this_book[file_md5]['position'] = position
                 this_book[file_md5]['bookmarks'] = bookmarks
+                this_book[file_md5]['toc'] = toc
                 this_book[file_md5]['content'] = content
                 this_book[file_md5]['images_only'] = images_only
                 this_book[file_md5]['cover'] = cover
@@ -307,7 +328,8 @@ class BookSorter:
                 return_books[j] = i[j]
 
         del self.processed_books
-        print('Finished processing in', time.time() - start_time)
+        processing_time = str(time.time() - start_time)
+        logger.info('Finished processing in ' + processing_time)
         return return_books
 
 
@@ -320,8 +342,14 @@ def progress_object_generator():
 
 
 def resize_image(cover_image_raw):
-    cover_image = QtGui.QImage()
-    cover_image.loadFromData(cover_image_raw)
+    if isinstance(cover_image_raw, QtGui.QImage):
+        cover_image = cover_image_raw
+    else:
+        cover_image = QtGui.QImage()
+        cover_image.loadFromData(cover_image_raw)
+
+    # Resize image to what literally everyone
+    # agrees is an acceptable cover size
     cover_image = cover_image.scaled(
         420, 600, QtCore.Qt.IgnoreAspectRatio)
 

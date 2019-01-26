@@ -1,5 +1,5 @@
 # This file is a part of Lector, a Qt based ebook reader
-# Copyright (C) 2017-2018 BasioMeusPuga
+# Copyright (C) 2017-2019 BasioMeusPuga
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,9 +21,12 @@ import os
 import sys
 import shutil
 import zipfile
+import logging
 
 from lector.readers.read_epub import EPUB
 import lector.KindleUnpack.kindleunpack as KindleUnpack
+
+logger = logging.getLogger(__name__)
 
 
 class ParseMOBI:
@@ -55,9 +58,9 @@ class ParseMOBI:
         self.book_ref = EPUB(self.epub_filepath)
         contents_found = self.book_ref.read_epub()
         if not contents_found:
-            print('Cannot process: ' + self.filename)
-            return
+            return False
         self.book = self.book_ref.book
+        return True
 
     def get_title(self):
         return self.book['title']

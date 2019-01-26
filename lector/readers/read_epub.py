@@ -1,5 +1,5 @@
 # This file is a part of Lector, a Qt based ebook reader
-# Copyright (C) 2017-2018 BasioMeusPuga
+# Copyright (C) 2017-2019 BasioMeusPuga
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,10 +15,13 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import logging
 import zipfile
 from urllib.parse import unquote
 
 from bs4 import BeautifulSoup
+
+logger = logging.getLogger(__name__)
 
 
 class EPUB:
@@ -50,7 +53,7 @@ class EPUB:
             self.zip_file = zipfile.ZipFile(
                 self.filename, mode='r', allowZip64=True)
         except (KeyError, AttributeError, zipfile.BadZipFile):
-            print('Cannot parse ' + self.filename)
+            logger.error('Malformed zip file ' + self.filename)
             return
 
     def parse_xml(self, filename, parser):
@@ -58,7 +61,8 @@ class EPUB:
             this_xml = self.zip_file.read(filename).decode()
         except KeyError:
             short_filename = os.path.basename(self.filename)
-            print(f'{str(filename)} not found in {short_filename}')
+            warning_string = f'{str(filename)} not found in {short_filename}'
+            logger.warning(warning_string)
             return
 
         root = BeautifulSoup(this_xml, parser)
@@ -67,7 +71,7 @@ class EPUB:
     def get_file_path(self, filename, is_content_file=False):
         # Use this to get the location of the content.opf file
         # And maybe some other file that has a more well formatted
-
+        # idea of the TOC
         # We're going to all this trouble because there really is
         # no going forward without a toc
         if is_content_file:
@@ -79,7 +83,8 @@ class EPUB:
                 try:
                     return root_item.get('full-path')
                 except AttributeError:
-                    print(f'ePub module: {self.filename} has a malformed container.xml')
+                    error_string = f'ePub module: {self.filename} has a malformed container.xml'
+                    logger.error(error_string)
                     return None
 
             possible_filenames = ('content.opf', 'package.opf')
@@ -104,7 +109,7 @@ class EPUB:
             if file_path_actual:
                 return self.zip_file.read(file_path_actual)
             else:
-                print('ePub module can\'t find ' + filename)
+                logger.error('ePub module can\'t find ' + filename)
 
     #______________________________________________________
 
@@ -189,7 +194,7 @@ class EPUB:
             if biggest_image:
                 self.book['cover'] = self.read_from_zip(biggest_image)
             else:
-                print('No cover found for: ' + self.filename)
+                logger.error('No cover found for: ' + self.filename)
 
         # Parse spine and arrange chapter paths acquired from the opf
         # according to the order IN THE SPINE

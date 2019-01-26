@@ -1,5 +1,5 @@
 # This file is a part of Lector, a Qt based ebook reader
-# Copyright (C) 2017-2018 BasioMeusPuga
+# Copyright (C) 2017-2019 BasioMeusPuga
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,8 +16,11 @@
 
 import os
 import zipfile
+import logging
 
 from lector.readers.read_epub import EPUB
+
+logger = logging.getLogger(__name__)
 
 
 class ParseEPUB:
@@ -33,9 +36,9 @@ class ParseEPUB:
         self.book_ref = EPUB(self.filename)
         contents_found = self.book_ref.read_epub()
         if not contents_found:
-            print('Cannot process: ' + self.filename)
-            return
+            return False
         self.book = self.book_ref.book
+        return True
 
     def get_title(self):
         return self.book['title']
@@ -60,6 +63,12 @@ class ParseEPUB:
 
         self.book_ref.parse_toc()
         self.book_ref.parse_chapters(temp_dir=self.extract_path)
-        file_settings = {
-            'images_only': False}
-        return self.book['book_list'], file_settings
+
+        toc = []
+        content = []
+        for count, i in enumerate(self.book['book_list']):
+            toc.append((1, i[0], count + 1))
+            content.append(i[1])
+
+        # Return toc, content, images_only
+        return toc, content, False

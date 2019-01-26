@@ -14,11 +14,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import logging
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from lector import database
 from lector.settings import Settings
 from lector.resources import resources
+
+logger = logging.getLogger(__name__)
 
 
 class QImageFactory:
@@ -277,8 +281,7 @@ class ViewProfileModification:
         self.format_contentView()
 
     def format_contentView(self):
-        current_tab = self.tabWidget.widget(
-            self.tabWidget.currentIndex())
+        current_tab = self.tabWidget.currentWidget()
 
         try:
             current_metadata = current_tab.metadata

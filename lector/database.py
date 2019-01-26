@@ -17,13 +17,15 @@
 import os
 import pickle
 import sqlite3
+import logging
 
 from PyQt5 import QtCore
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseInit:
     def __init__(self, location_prefix):
-        os.makedirs(location_prefix, exist_ok=True)
         self.database_path = os.path.join(location_prefix, 'Lector.db')
 
         self.books_table_columns = {
@@ -81,7 +83,8 @@ class DatabaseInit:
         for i in self.books_table_columns.items():
             if i[0] not in database_columns:
                 commit_required = True
-                print(f'Database: Adding column "{i[0]}"')
+                info_string = f'Database: Adding column "{i[0]}"'
+                logger.info(info_string)
                 sql_command = f"ALTER TABLE books ADD COLUMN {i[0]} {i[1]}"
                 self.database.execute(sql_command)
 
@@ -208,7 +211,7 @@ class DatabaseFunctions:
                 return None
 
         except (KeyError, sqlite3.OperationalError):
-            print('SQLite is in wretched rebellion @ data fetching handling')
+            logger.critical('SQLite is in wretched rebellion @ data fetching handling')
 
     def fetch_covers_only(self, hash_list):
         parameter_marks = ','.join(['?' for i in hash_list])
@@ -241,7 +244,7 @@ class DatabaseFunctions:
             self.database.execute(
                 sql_command, update_data)
         except sqlite3.OperationalError:
-            print('SQLite is in wretched rebellion @ metadata handling')
+            logger.critical('SQLite is in wretched rebellion @ metadata handling')
 
         self.database.commit()
         self.database.close()

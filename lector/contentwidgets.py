@@ -16,18 +16,22 @@
 
 import os
 import zipfile
+import logging
 import webbrowser
 
 try:
-    import popplerqt5
+    import fitz
 except ImportError:
     pass
 
 from PyQt5 import QtWidgets, QtGui, QtCore
 
 from lector.rarfile import rarfile
+from lector.parsers.pdf import render_pdf_page
 from lector.threaded import BackGroundCacheRefill
 from lector.annotations import AnnotationPlacement
+
+logger = logging.getLogger(__name__)
 
 
 class PliantQGraphicsView(QtWidgets.QGraphicsView):
@@ -37,7 +41,6 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
         self.parent = parent
         self.main_window = main_window
 
-        self.qimage = None  # Will be needed to resize pdf
         self.image_pixmap = None
         self.image_cache = [None for _ in range(4)]
 
@@ -55,10 +58,7 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
             self.book = rarfile.RarFile(self.filepath)
 
         elif self.filetype == 'pdf':
-            self.book = popplerqt5.Poppler.Document.load(self.filepath)
-            self.book.setRenderHint(
-                popplerqt5.Poppler.Document.Antialiasing
-                and popplerqt5.Poppler.Document.TextAntialiasing)
+            self.book = fitz.open(self.filepath)
 
         self.common_functions = PliantWidgetsCommonFunctions(
             self, self.main_window)
@@ -73,25 +73,26 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
             self.generate_graphicsview_context_menu)
 
     def loadImage(self, current_page):
-        all_pages = [i[1] for i in self.parent.metadata['content']]
+        all_pages = self.parent.metadata['content']
         current_page_index = all_pages.index(current_page)
 
         double_page_mode = False
-        if (self.main_window.settings['page_view_button'] == 'doublePageButton'
-                and (current_page_index != 0 and current_page_index != len(all_pages) - 1)):
+        if (self.main_window.settings['double_page_mode']
+                and (current_page_index not in (0, len(all_pages) - 1))):
             double_page_mode = True
 
         def load_page(current_page):
             def page_loader(page):
-                # TODO Maybe pdf image res needs a setting?
                 pixmap = QtGui.QPixmap()
+
                 if self.filetype in ('cbz', 'cbr'):
                     page_data = self.book.read(page)
                     pixmap.loadFromData(page_data)
+
                 elif self.filetype == 'pdf':
-                    page_data = self.book.page(current_page)
-                    page_qimage = page_data.renderToImage(400, 400)
-                    pixmap.convertFromImage(page_qimage)
+                    page_data = self.book.loadPage(page)
+                    pixmap = render_pdf_page(page_data)
+
                 return pixmap
 
             firstPixmap = page_loader(current_page)
@@ -101,18 +102,30 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
             next_page = all_pages[current_page_index + 1]
             secondPixmap = page_loader(next_page)
 
+            # Pixmap height should be the greater of the 2 images
+            pixmap_height = firstPixmap.height()
+            if secondPixmap.height() > pixmap_height:
+                pixmap_height = secondPixmap.height()
+
             bigPixmap = QtGui.QPixmap(
                 firstPixmap.width() + secondPixmap.width() + 5,
-                firstPixmap.height())
+                pixmap_height)
             bigPixmap.fill(QtCore.Qt.transparent)
             imagePainter = QtGui.QPainter(bigPixmap)
-            imagePainter.drawPixmap(0, 0, firstPixmap)
-            imagePainter.drawPixmap(firstPixmap.width() + 5, 0, secondPixmap)
+
+            manga_mode = self.main_window.settings['manga_mode']
+            if manga_mode:
+                imagePainter.drawPixmap(0, 0, secondPixmap)
+                imagePainter.drawPixmap(secondPixmap.width() + 4, 0, firstPixmap)
+            else:
+                imagePainter.drawPixmap(0, 0, firstPixmap)
+                imagePainter.drawPixmap(firstPixmap.width() + 4, 0, secondPixmap)
+
             imagePainter.end()
             return bigPixmap
 
         def generate_image_cache(current_page):
-            print('Building image cache')
+            logger.info('(Re)building image cache')
             current_page_index = all_pages.index(current_page)
 
             # Image caching for single and double page views
@@ -208,6 +221,9 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
         self.setScene(graphicsScene)
         self.show()
 
+        # This prevents a partial page scroll on first load
+        self.verticalScrollBar().setValue(0)
+
     def wheelEvent(self, event):
         self.common_functions.wheelEvent(event)
 
@@ -233,9 +249,10 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
                         next_val = 0
                     self.verticalScrollBar().setValue(next_val)
 
-        small_increment = maximum // 4
-        big_increment = maximum // 2
+        small_increment = maximum //self.main_window.settings['small_increment']
+        big_increment = maximum // self.main_window.settings['large_increment']
 
+        # Scrolling
         if event.key() == QtCore.Qt.Key_Up:
             scroller(small_increment, False)
         if event.key() == QtCore.Qt.Key_Down:
@@ -243,6 +260,11 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
         if event.key() == QtCore.Qt.Key_Space:
             scroller(big_increment)
 
+        # Double page mode and manga mode
+        if event.key() in (QtCore.Qt.Key_D, QtCore.Qt.Key_M):
+            self.main_window.change_page_view(event.key())
+
+        # Image fit modes
         view_modification_keys = (
             QtCore.Qt.Key_Plus, QtCore.Qt.Key_Minus, QtCore.Qt.Key_Equal,
             QtCore.Qt.Key_B, QtCore.Qt.Key_W, QtCore.Qt.Key_O)
@@ -258,49 +280,47 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
             self.viewport().setCursor(QtCore.Qt.OpenHandCursor)
         else:
             self.viewport().setCursor(QtCore.Qt.ClosedHandCursor)
-        self.parent.mouse_hide_timer.start(3000)
+        self.parent.mouse_hide_timer.start(2000)
         QtWidgets.QGraphicsView.mouseMoveEvent(self, event)
 
     def generate_graphicsview_context_menu(self, position):
         contextMenu = QtWidgets.QMenu()
-
-        saveAction = contextMenu.addAction(
-            self.main_window.QImageFactory.get_image('filesaveas'),
-            self._translate('PliantQGraphicsView', 'Save page as...'))
-
         fsToggleAction = dfToggleAction = 'Caesar si viveret, ad remum dareris'
 
         if self.parent.is_fullscreen:
             fsToggleAction = contextMenu.addAction(
                 self.main_window.QImageFactory.get_image('view-fullscreen'),
                 self._translate('PliantQGraphicsView', 'Exit fullscreen'))
-        else:
-            if self.main_window.settings['show_bars']:
-                distraction_free_prompt = self._translate(
-                    'PliantQGraphicsView', 'Distraction Free mode')
-            else:
-                distraction_free_prompt = self._translate(
-                    'PliantQGraphicsView', 'Exit Distraction Free mode')
+        elif not self.main_window.settings['show_bars']:
+            distraction_free_prompt = self._translate(
+                'PliantQGraphicsView', 'Exit Distraction Free mode')
 
             dfToggleAction = contextMenu.addAction(
                 self.main_window.QImageFactory.get_image('visibility'),
                 distraction_free_prompt)
+
+        saveAction = contextMenu.addAction(
+            self.main_window.QImageFactory.get_image('filesaveas'),
+            self._translate('PliantQGraphicsView', 'Save page as...'))
 
         view_submenu_string = self._translate('PliantQGraphicsView', 'View')
         viewSubMenu = contextMenu.addMenu(view_submenu_string)
         viewSubMenu.setIcon(
             self.main_window.QImageFactory.get_image('mail-thread-watch'))
 
-        singlePageAction = doublePageAction = 'It\'s hammer time'
-        if self.main_window.settings['page_view_button'] == 'doublePageButton':
-            singlePageAction = viewSubMenu.addAction(
-                self.main_window.QImageFactory.get_image('page-single'),
-                self._translate('PliantQGraphicsView', 'Single page view'))
-        else:
-            doublePageAction = viewSubMenu.addAction(
-                self.main_window.QImageFactory.get_image('page-double'),
-                self._translate('PliantQGraphicsView', 'Double page view'))
+        doublePageAction = viewSubMenu.addAction(
+            self.main_window.QImageFactory.get_image('page-double'),
+            self._translate('PliantQGraphicsView', 'Double page mode (D)'))
+        doublePageAction.setCheckable(True)
+        doublePageAction.setChecked(
+            self.main_window.bookToolBar.doublePageButton.isChecked())
 
+        mangaModeAction = viewSubMenu.addAction(
+            self.main_window.QImageFactory.get_image('manga-mode'),
+            self._translate('PliantQGraphicsView', 'Manga mode (M)'))
+        mangaModeAction.setCheckable(True)
+        mangaModeAction.setChecked(
+            self.main_window.bookToolBar.mangaModeButton.isChecked())
         viewSubMenu.addSeparator()
 
         zoominAction = viewSubMenu.addAction(
@@ -333,11 +353,10 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
 
         action = contextMenu.exec_(self.sender().mapToGlobal(position))
 
-        if action == singlePageAction:
-            self.main_window.bookToolBar.singlePageButton.trigger()
-
         if action == doublePageAction:
             self.main_window.bookToolBar.doublePageButton.trigger()
+        if action == mangaModeAction:
+            self.main_window.bookToolBar.mangaModeButton.trigger()
 
         if action == saveAction:
             dialog_prompt = self._translate('Main_UI', 'Save page as...')
@@ -371,6 +390,8 @@ class PliantQGraphicsView(QtWidgets.QGraphicsView):
         self.main_window.closeEvent()
 
     def toggle_annotation_mode(self):
+        # The graphics view doesn't currently have annotation functionality
+        # Don't delete this because it's still called
         pass
 
 
@@ -429,7 +450,9 @@ class PliantQTextBrowser(QtWidgets.QTextBrowser):
     def record_position(self, return_as_bookmark=False):
         self.parent.metadata['position']['is_read'] = False
 
-        cursor = self.cursorForPosition(QtCore.QPoint(0, 0))
+        # The y coordinate is set to 10 because 0 tends to make
+        # cursor position a little finicky
+        cursor = self.cursorForPosition(QtCore.QPoint(0, 10))
         cursor_position = cursor.position()
 
         # Current block for progress measurement
@@ -469,7 +492,7 @@ class PliantQTextBrowser(QtWidgets.QTextBrowser):
             selected_index = self.parent.annotationListView.currentIndex()
             self.current_annotation = self.parent.annotationModel.data(
                 selected_index, QtCore.Qt.UserRole)
-            print('Current annotation: ' + self.current_annotation['name'])
+            logger.info('Selected annotation: ' + self.current_annotation['name'])
 
     def mouseReleaseEvent(self, event):
         # This takes care of annotation placement
@@ -530,6 +553,17 @@ class PliantQTextBrowser(QtWidgets.QTextBrowser):
         searchAction = searchGoogleAction = bookmarksToggleAction = 'TODO Insert Latin Joke'
         deleteAnnotationAction = editAnnotationNoteAction = 'Latin quote 2. Electric Boogaloo.'
 
+        if self.parent.is_fullscreen:
+            fsToggleAction = contextMenu.addAction(
+                self.main_window.QImageFactory.get_image('view-fullscreen'),
+                self._translate('PliantQTextBrowser', 'Exit fullscreen'))
+        elif not self.main_window.settings['show_bars']:
+            distraction_free_prompt = self._translate(
+                'PliantQTextBrowser', 'Exit Distraction Free mode')
+            dfToggleAction = contextMenu.addAction(
+                self.main_window.QImageFactory.get_image('visibility'),
+                distraction_free_prompt)
+
         if selection and selection != '':
             first_selected_word = selection.split()[0]
             define_string = self._translate('PliantQTextBrowser', 'Define')
@@ -554,6 +588,10 @@ class PliantQTextBrowser(QtWidgets.QTextBrowser):
             searchYoutubeAction = searchSubMenu.addAction(
                 QtGui.QIcon(':/images/Youtube.png'),
                 'Youtube')
+        else:
+            searchAction = contextMenu.addAction(
+                self.main_window.QImageFactory.get_image('search'),
+                self._translate('PliantQTextBrowser', 'Search'))
 
         if annotation_is_present:
             annotationsubMenu = contextMenu.addMenu('Annotation')
@@ -566,21 +604,10 @@ class PliantQTextBrowser(QtWidgets.QTextBrowser):
                 self.main_window.QImageFactory.get_image('remove'),
                 self._translate('PliantQTextBrowser', 'Delete annotation'))
 
-        if self.parent.is_fullscreen:
-            fsToggleAction = contextMenu.addAction(
-                self.main_window.QImageFactory.get_image('view-fullscreen'),
-                self._translate('PliantQTextBrowser', 'Exit fullscreen'))
-        else:
-            if self.main_window.settings['show_bars']:
-                distraction_free_prompt = self._translate(
-                    'PliantQTextBrowser', 'Distraction Free mode')
-            else:
-                distraction_free_prompt = self._translate(
-                    'PliantQTextBrowser', 'Exit Distraction Free mode')
-
-            dfToggleAction = contextMenu.addAction(
-                self.main_window.QImageFactory.get_image('visibility'),
-                distraction_free_prompt)
+        add_bookmark_string = self._translate('PliantQTextBrowser', 'Add Bookmark')
+        addBookMarkAction = contextMenu.addAction(
+            self.main_window.QImageFactory.get_image('bookmark-new'),
+            add_bookmark_string)
 
         if not self.main_window.settings['show_bars'] or self.parent.is_fullscreen:
             bookmarksToggleAction = contextMenu.addAction(
@@ -591,12 +618,17 @@ class PliantQTextBrowser(QtWidgets.QTextBrowser):
 
         action = contextMenu.exec_(self.sender().mapToGlobal(position))
 
+        if action == addBookMarkAction:
+            self.parent.add_bookmark(cursor_at_mouse.position())
+
         if action == defineAction:
             self.main_window.definitionDialog.find_definition(selection)
 
         if action == searchAction:
-            self.main_window.bookToolBar.searchBar.setText(selection)
-            self.main_window.bookToolBar.searchBar.setFocus()
+            if selection and selection != '':
+                self.parent.searchLineEdit.setText(selection)
+            self.parent.toggle_side_dock(2, True)
+
         if action == searchGoogleAction:
             webbrowser.open_new_tab(
                 f'https://www.google.com/search?q={selection}')
@@ -616,7 +648,7 @@ class PliantQTextBrowser(QtWidgets.QTextBrowser):
                 'delete', 'text', current_chapter, cursor_at_mouse.position())
 
         if action == bookmarksToggleAction:
-            self.parent.toggle_side_dock(1)
+            self.parent.toggle_side_dock(0)
 
         if action == fsToggleAction:
             self.parent.exit_fullscreen()
@@ -631,7 +663,7 @@ class PliantQTextBrowser(QtWidgets.QTextBrowser):
             self.viewport().setCursor(QtCore.Qt.IBeamCursor)
         else:
             self.viewport().setCursor(QtCore.Qt.ArrowCursor)
-        self.parent.mouse_hide_timer.start(3000)
+        self.parent.mouse_hide_timer.start(2000)
         QtWidgets.QTextBrowser.mouseMoveEvent(self, event)
 
 
@@ -684,37 +716,34 @@ class PliantWidgetsCommonFunctions:
                     self.change_chapter(-1)
 
     def change_chapter(self, direction, was_button_pressed=None):
-        current_toc_index = self.main_window.bookToolBar.tocBox.currentIndex()
-        max_toc_index = self.main_window.bookToolBar.tocBox.count() - 1
+        current_tab = self.pw.parent
+        current_position = current_tab.metadata['position']['current_chapter']
 
-        if (current_toc_index < max_toc_index and direction == 1) or (
-                current_toc_index > 0 and direction == -1):
+        # Special cases for double page view
+        # Page limits are taken care of by the set_content method
+        def get_modifier():
+            if (not self.main_window.settings['double_page_mode']
+                    or not self.are_we_doing_images_only):
+                return 0
 
-            # Special cases for double page view
-            def get_modifier():
-                if (self.main_window.settings['page_view_button'] == 'singlePageButton'
-                        or not self.are_we_doing_images_only):
-                    return 0
+            if (current_position == 0 or current_position % 2 == 0):
+                return 0
 
-                if (current_toc_index == 0
-                        or current_toc_index % 2 == 0
-                        or current_toc_index == max_toc_index):
-                    return 0
-                if current_toc_index % 2 == 1:
-                    return direction
+            if current_position % 2 == 1:
+                return direction
 
-            self.main_window.bookToolBar.tocBox.setCurrentIndex(
-                current_toc_index + direction + get_modifier())
+        current_tab.set_content(
+            current_position + direction + get_modifier(), True)
 
-            # Set page position depending on if the chapter number is increasing or decreasing
-            if direction == 1 or was_button_pressed:
-                self.pw.verticalScrollBar().setValue(0)
-            else:
-                self.pw.verticalScrollBar().setValue(
-                    self.pw.verticalScrollBar().maximum())
+        # Set page position depending on if the chapter number is increasing or decreasing
+        if direction == 1 or was_button_pressed:
+            self.pw.verticalScrollBar().setValue(0)
+        else:
+            self.pw.verticalScrollBar().setValue(
+                self.pw.verticalScrollBar().maximum())
 
-            if not was_button_pressed:
-                self.pw.ignore_wheel_event = True
+        if not was_button_pressed:
+            self.pw.ignore_wheel_event = True
 
     def load_annotations(self, chapter):
         try:
@@ -743,7 +772,8 @@ class PliantWidgetsCommonFunctions:
         if not self.are_we_doing_images_only:
             cursor = self.pw.textCursor()
             cursor.setPosition(0)
-            cursor.movePosition(QtGui.QTextCursor.End, QtGui.QTextCursor.KeepAnchor)
+            cursor.movePosition(
+                QtGui.QTextCursor.End, QtGui.QTextCursor.KeepAnchor)
 
             previewCharFormat = QtGui.QTextCharFormat()
             previewCharFormat.setFontStyleStrategy(
@@ -800,11 +830,13 @@ class PliantWidgetsCommonFunctions:
             1, QtCore.Qt.MatchExactly)
 
         if self.are_we_doing_images_only:
-            position_percentage = (self.pw.parent.metadata['position']['current_chapter'] /
-                                   self.pw.parent.metadata['position']['total_chapters'])
+            position_percentage = (
+                self.pw.parent.metadata['position']['current_chapter'] /
+                self.pw.parent.metadata['position']['total_chapters'])
         else:
-            position_percentage = (self.pw.parent.metadata['position']['current_block'] /
-                                   self.pw.parent.metadata['position']['total_blocks'])
+            position_percentage = (
+                self.pw.parent.metadata['position']['current_block'] /
+                self.pw.parent.metadata['position']['total_blocks'])
 
         # Update position percentage
         if model_index:
@@ -814,14 +846,27 @@ class PliantWidgetsCommonFunctions:
     def generate_combo_box_action(self, contextMenu):
         contextMenu.addSeparator()
 
-        tocCombobox = QtWidgets.QComboBox()
-        toc_data = [i[0] for i in self.pw.parent.metadata['content']]
-        tocCombobox.addItems(toc_data)
-        tocCombobox.setCurrentIndex(
-            self.pw.main_window.bookToolBar.tocBox.currentIndex())
-        tocCombobox.currentIndexChanged.connect(
-            self.pw.main_window.bookToolBar.tocBox.setCurrentIndex)
+        def set_toc_position(tocTree):
+            currentIndex = tocTree.currentIndex()
+            required_position = currentIndex.data(QtCore.Qt.UserRole)
+            self.pw.parent.set_content(required_position, True)
+
+        # Create the Combobox / Treeview combination
+        tocComboBox = QtWidgets.QComboBox()
+        tocTree = QtWidgets.QTreeView()
+        tocComboBox.setView(tocTree)
+        tocComboBox.setModel(self.pw.parent.tocModel)
+        tocTree.setRootIsDecorated(False)
+        tocTree.setItemsExpandable(False)
+        tocTree.expandAll()
+
+        # Set the position of the QComboBox
+        self.pw.parent.set_tocBox_index(None, tocComboBox)
+
+        # Make clicking do something
+        tocComboBox.currentIndexChanged.connect(
+            lambda: set_toc_position(tocTree))
 
         comboboxAction = QtWidgets.QWidgetAction(self.pw)
-        comboboxAction.setDefaultWidget(tocCombobox)
+        comboboxAction.setDefaultWidget(tocComboBox)
         contextMenu.addAction(comboboxAction)

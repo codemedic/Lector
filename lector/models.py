@@ -14,10 +14,13 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import logging
 import pathlib
 
 from PyQt5 import QtCore, QtWidgets
 from lector.resources import pie_chart
+
+logger = logging.getLogger(__name__)
 
 
 class BookmarkProxyModel(QtCore.QSortFilterProxyModel):
@@ -99,7 +102,8 @@ class TableProxyModel(QtCore.QSortFilterProxyModel):
             try:
                 return self.header_data[column]
             except IndexError:
-                print('Table proxy model: Can\'t find header for column', column)
+                logger.error(
+                    'Table proxy model: Can\'t find header for column' + str(column))
                 # The column will be called IndexError. Not a typo.
                 return 'IndexError'
 
@@ -344,31 +348,3 @@ class MostExcellentFileSystemModel(QtWidgets.QFileSystemModel):
         for i in deletable:
             del self.tag_data[i]
 
-
-# TODO
-# Unbork this
-class FileSystemProxyModel(QtCore.QSortFilterProxyModel):
-    def __init__(self, parent=None):
-        super(FileSystemProxyModel, self).__init__(parent)
-
-    def filterAcceptsRow(self, row_num, parent):
-        model = self.sourceModel()
-        filter_out = [
-            'boot', 'dev', 'etc', 'lost+found', 'opt', 'pdb',
-            'proc', 'root', 'run', 'srv', 'sys', 'tmp', 'twonky',
-            'usr', 'var', 'bin', 'kdeinit5__0', 'lib', 'lib64', 'sbin']
-
-        name_index = model.index(row_num, 0)
-        valid_data = model.data(name_index)
-
-        print(valid_data)
-
-        return True
-
-        try:
-            if valid_data in filter_out:
-                return False
-        except AttributeError:
-            pass
-
-        return True

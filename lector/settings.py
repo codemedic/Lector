@@ -17,9 +17,12 @@
 # Keep in mind that all integer / boolean settings are returned as strings
 
 import os
-
+import logging
 from ast import literal_eval
+
 from PyQt5 import QtCore, QtGui
+
+logger = logging.getLogger(__name__)
 
 
 class Settings:
@@ -123,10 +126,14 @@ class Settings:
             'tocWithBookmarks', 'False').capitalize())
         self.parent.settings['scroll_speed'] = int(self.settings.value('scrollSpeed', 7))
         self.parent.settings['consider_read_at'] = int(self.settings.value('considerReadAt', 95))
+        self.parent.settings['small_increment'] = int(self.settings.value('smallIncrement', 4))
+        self.parent.settings['large_increment'] = int(self.settings.value('largeIncrement', 2))
         self.parent.settings['attenuate_titles'] = literal_eval(self.settings.value(
             'attenuateTitles', 'False').capitalize())
-        self.parent.settings['page_view_button'] = self.settings.value(
-            'pageViewButton', 'singlePageButton')
+        self.parent.settings['double_page_mode'] = literal_eval(self.settings.value(
+            'doublePageMode', 'False').capitalize())
+        self.parent.settings['manga_mode'] = literal_eval(self.settings.value(
+            'mangaMode', 'False').capitalize())
         self.settings.endGroup()
 
         self.settings.beginGroup('dialogSettings')
@@ -141,8 +148,9 @@ class Settings:
             self.parent.settings['annotations'] = list()
         self.settings.endGroup()
 
+        logger.info('Settings loaded')
+
     def save_settings(self):
-        print('Saving settings...')
         current_settings = self.parent.settings
 
         self.settings.beginGroup('mainWindow')
@@ -208,7 +216,10 @@ class Settings:
         self.settings.setValue('tocWithBookmarks', str(current_settings['toc_with_bookmarks']))
         self.settings.setValue('scrollSpeed', current_settings['scroll_speed'])
         self.settings.setValue('considerReadAt', current_settings['consider_read_at'])
-        self.settings.setValue('pageViewButton', current_settings['page_view_button'])
+        self.settings.setValue('mangaMode', str(current_settings['manga_mode']))
+        self.settings.setValue('doublePageMode', str(current_settings['double_page_mode']))
+        self.settings.setValue('smallIncrement', current_settings['small_increment'])
+        self.settings.setValue('largeIncrement', current_settings['large_increment'])
         self.settings.endGroup()
 
         self.settings.beginGroup('dialogSettings')
@@ -218,3 +229,5 @@ class Settings:
         self.settings.beginGroup('annotations')
         self.settings.setValue('annotationList', current_settings['annotations'])
         self.settings.endGroup()
+
+        logger.info('Settings saved')

@@ -14,7 +14,11 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import logging
+
 from PyQt5 import QtWidgets, QtCore
+
+logger = logging.getLogger(__name__)
 
 
 class BookToolBar(QtWidgets.QToolBar):
@@ -26,9 +30,6 @@ class BookToolBar(QtWidgets.QToolBar):
         spacer = QtWidgets.QWidget()
         spacer.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-
-        sizePolicy = QtWidgets.QSizePolicy(
-            QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
 
         self.setMovable(False)
         self.setIconSize(QtCore.QSize(22, 22))
@@ -45,7 +46,7 @@ class BookToolBar(QtWidgets.QToolBar):
             self)
         self.annotationButton = QtWidgets.QAction(
             image_factory.get_image('annotate'),
-            self._translate('BookToolBar', 'Annotations'),
+            self._translate('BookToolBar', 'Annotations (Ctrl + N)'),
             self)
         self.addBookmarkButton = QtWidgets.QAction(
             image_factory.get_image('bookmark-new'),
@@ -55,13 +56,17 @@ class BookToolBar(QtWidgets.QToolBar):
             image_factory.get_image('bookmarks'),
             self._translate('BookToolBar', 'Bookmarks (Ctrl + B)'),
             self)
+        self.searchButton = QtWidgets.QAction(
+            image_factory.get_image('search'),
+            self._translate('BookToolBar', 'Search (Ctrl + F)'),
+            self)
         self.distractionFreeButton = QtWidgets.QAction(
             image_factory.get_image('visibility'),
             self._translate('Main_BookToolBarUI', 'Toggle distraction free mode (Ctrl + D)'),
             self)
         self.fullscreenButton = QtWidgets.QAction(
             image_factory.get_image('view-fullscreen'),
-            self._translate('BookToolBar', 'Fullscreen (F11)'),
+            self._translate('BookToolBar', 'Fullscreen (F)'),
             self)
         self.resetProfile = QtWidgets.QAction(
             image_factory.get_image('reload'),
@@ -72,12 +77,14 @@ class BookToolBar(QtWidgets.QToolBar):
         self.addAction(self.fontButton)
         self.fontButton.setCheckable(True)
         self.fontButton.triggered.connect(self.toggle_font_settings)
-        self.addSeparator()
-        self.addAction(self.annotationButton)
-        self.addSeparator()
+        self.bookSeparator1 = self.addSeparator()
         self.addAction(self.addBookmarkButton)
         self.addAction(self.bookmarkButton)
-        self.addSeparator()
+        self.bookSeparator2 = self.addSeparator()
+        self.addAction(self.annotationButton)
+        self.bookSeparator3 = self.addSeparator()
+        self.addAction(self.searchButton)
+        self.bookSeparator4 = self.addSeparator()
         self.addAction(self.distractionFreeButton)
         self.addAction(self.fullscreenButton)
 
@@ -175,7 +182,7 @@ class BookToolBar(QtWidgets.QToolBar):
         self.fontSeparator4 = self.addSeparator()
         self.addAction(self.paddingUp)
         self.addAction(self.paddingDown)
-        self.fontSeparator4 = self.addSeparator()
+        self.fontSeparator5 = self.addSeparator()
         self.addAction(self.alignLeft)
         self.addAction(self.alignRight)
         self.addAction(self.alignCenter)
@@ -199,58 +206,53 @@ class BookToolBar(QtWidgets.QToolBar):
             self.fontSeparator2,
             self.fontSeparator3,
             self.fontSeparator4,
+            self.fontSeparator5,
             self.resetProfile]
 
         for i in self.fontActions:
             i.setVisible(False)
 
         # Comic view modification
-        # Single and double page view buttons
-        self.singlePageButton = QtWidgets.QAction(
-            image_factory.get_image('page-single'),
-            self._translate('BookToolBar', 'View as single page'),
-            self)
-        self.singlePageButton.setObjectName('singlePageButton')
-        self.singlePageButton.setCheckable(True)
-
         self.doublePageButton = QtWidgets.QAction(
             image_factory.get_image('page-double'),
-            self._translate('BookToolBar', 'View as double page'),
+            self._translate('BookToolBar', 'Double page mode (D)'),
             self)
         self.doublePageButton.setObjectName('doublePageButton')            
         self.doublePageButton.setCheckable(True)
 
-        self.pageViewButtons = QtWidgets.QActionGroup(self)
-        self.pageViewButtons.setExclusive(True)
-        self.pageViewButtons.addAction(self.singlePageButton)
-        self.pageViewButtons.addAction(self.doublePageButton)
+        self.mangaModeButton = QtWidgets.QAction(
+            image_factory.get_image('manga-mode'),
+            self._translate('BookToolBar', 'Manga mode (M)'),
+            self)
+        self.mangaModeButton.setObjectName('mangaModeButton')
+        self.mangaModeButton.setCheckable(True)
 
         self.zoomIn = QtWidgets.QAction(
             image_factory.get_image('zoom-in'),
-            self._translate('BookToolBar', 'Zoom in'),
+            self._translate('BookToolBar', 'Zoom in (+)'),
             self)
         self.zoomIn.setObjectName('zoomIn')
         self.zoomOut = QtWidgets.QAction(
             image_factory.get_image('zoom-out'),
-            self._translate('BookToolBar', 'Zoom Out'),
+            self._translate('BookToolBar', 'Zoom Out (-)'),
             self)
         self.zoomOut.setObjectName('zoomOut')
 
         self.fitWidth = QtWidgets.QAction(
             image_factory.get_image('zoom-fit-width'),
-            self._translate('BookToolBar', 'Fit Width'),
+            self._translate('BookToolBar', 'Fit Width (W)'),
             self)
         self.fitWidth.setObjectName('fitWidth')
         self.fitWidth.setCheckable(True)
         self.bestFit = QtWidgets.QAction(
             image_factory.get_image('zoom-fit-best'),
-            self._translate('BookToolBar', 'Best Fit'),
+            self._translate('BookToolBar', 'Best Fit (B)'),
             self)
         self.bestFit.setObjectName('bestFit')
         self.bestFit.setCheckable(True)
         self.originalSize = QtWidgets.QAction(
             image_factory.get_image('zoom-original'),
-            self._translate('BookToolBar', 'Original size'),
+            self._translate('BookToolBar', 'Original size (O)'),
             self)
         self.originalSize.setObjectName('originalSize')
         self.originalSize.setCheckable(True)
@@ -260,8 +262,8 @@ class BookToolBar(QtWidgets.QToolBar):
         self.comicBGColor.setObjectName('comicBGColor')
 
         self.comicSeparator1 = self.addSeparator()
-        self.addAction(self.singlePageButton)
         self.addAction(self.doublePageButton)
+        self.addAction(self.mangaModeButton)
         self.comicSeparator2 = self.addSeparator()
         self.addAction(self.zoomIn)
         self.addAction(self.zoomOut)
@@ -272,8 +274,8 @@ class BookToolBar(QtWidgets.QToolBar):
         self.comicBGColorAction = self.addWidget(self.comicBGColor)
 
         self.comicActions = [
-            self.singlePageButton,
             self.doublePageButton,
+            self.mangaModeButton,
             self.comicBGColorAction,
             self.zoomIn,
             self.zoomOut,
@@ -287,36 +289,34 @@ class BookToolBar(QtWidgets.QToolBar):
         for i in self.comicActions:
             i.setVisible(False)
 
-        # Other booktoolbar widgets
-        self.searchBar = FixedLineEdit(self)
-        self.searchBar.setPlaceholderText(
-            self._translate('BookToolBar', 'Search...'))
-        self.searchBar.setSizePolicy(sizePolicy)
-        self.searchBar.setContentsMargins(10, 0, 0, 0)
-        self.searchBar.setObjectName('searchBar')
-
-        # Sorter
+        # Table of contents Combo Box
+        # Has to have a QTreeview associated with it
         self.tocBox = FixedComboBox(self)
-        self.tocBox.setObjectName('sortingBox')
         self.tocBox.setToolTip(
             self._translate('BookToolBar', 'Table of Contents'))
+        self.tocTreeView = QtWidgets.QTreeView(self.tocBox)
+        self.tocBox.setView(self.tocTreeView)
+        self.tocTreeView.setItemsExpandable(False)
+        self.tocTreeView.setRootIsDecorated(False)
 
         # All of these will be put after the spacer
         # This means that the buttons in the left side of
         # the toolbar have to split up and added here
-        self.boxSpacer = self.addWidget(spacer)
-
+        self.addWidget(spacer)
         self.tocBoxAction = self.addWidget(self.tocBox)
-        self.searchBarAction = self.addWidget(self.searchBar)
 
         self.bookActions = [
             self.annotationButton,
             self.addBookmarkButton,
             self.bookmarkButton,
+            self.searchButton,
             self.distractionFreeButton,
             self.fullscreenButton,
             self.tocBoxAction,
-            self.searchBarAction]
+            self.bookSeparator1,
+            self.bookSeparator2,
+            self.bookSeparator3,
+            self.bookSeparator4]
 
         for i in self.bookActions:
             i.setVisible(True)
@@ -330,17 +330,16 @@ class BookToolBar(QtWidgets.QToolBar):
             self.customize_view_off()
 
     def customize_view_on(self):
-        if self.parent().tabWidget.widget(
-                self.parent().tabWidget.currentIndex()).metadata['images_only']:
-
-            # The following might seem redundant,
-            # but it's necessary for tab switching
-
+        images_only = self.parent().tabWidget.currentWidget().are_we_doing_images_only
+        # The following might seem redundant,
+        # but it's necessary for tab switching
+        if images_only:
             for i in self.comicActions:
                 i.setVisible(True)
 
             for i in self.fontActions:
                 i.setVisible(False)
+
         else:
             for i in self.fontActions:
                 i.setVisible(True)
@@ -368,15 +367,10 @@ class LibraryToolBar(QtWidgets.QToolBar):
         super(LibraryToolBar, self).__init__(parent)
         self._translate = QtCore.QCoreApplication.translate
 
-        spacer = QtWidgets.QWidget()
-        spacer.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-
         self.setMovable(False)
         self.setIconSize(QtCore.QSize(22, 22))
         self.setFloatable(False)
         self.setContextMenuPolicy(QtCore.Qt.PreventContextMenu)
-        self.setObjectName("LibraryToolBar")
 
         image_factory = self.window().QImageFactory
 
@@ -415,11 +409,10 @@ class LibraryToolBar(QtWidgets.QToolBar):
             image_factory.get_image('reload'),
             self._translate('LibraryToolBar', 'Scan Library'),
             self)
+        self.reloadLibraryButton.setObjectName('reloadLibrary')
 
         self.libraryFilterButton = QtWidgets.QToolButton(self)
         self.libraryFilterButton.setIcon(image_factory.get_image('view-readermode'))
-        self.libraryFilterButton.setText(
-            self._translate('LibraryToolBar', 'Filter library'))
         self.libraryFilterButton.setToolTip(
             self._translate('LibraryToolBar', 'Filter library'))
 
@@ -451,8 +444,7 @@ class LibraryToolBar(QtWidgets.QToolBar):
         self.searchBar.setPlaceholderText(
             self._translate('LibraryToolBar', 'Search for Title, Author, Tags...'))
         self.searchBar.setSizePolicy(sizePolicy)
-        self.searchBar.setContentsMargins(10, 0, 0, 0)
-        self.searchBar.setObjectName('searchBar')
+        self.searchBar.setContentsMargins(0, 0, 10, 0)
 
         # Sorter
         title_string = self._translate('LibraryToolBar', 'Title')
@@ -467,15 +459,18 @@ class LibraryToolBar(QtWidgets.QToolBar):
 
         self.sortingBox = FixedComboBox(self)
         self.sortingBox.addItems(sorting_choices)
-        self.sortingBox.setObjectName('sortingBox')
-        self.sortingBox.setSizePolicy(sizePolicy)
         self.sortingBox.setMinimumContentsLength(10)
         self.sortingBox.setToolTip(self._translate('LibraryToolBar', 'Sort by'))
 
+        # Spacer
+        spacer = QtWidgets.QWidget()
+        spacer.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
+
         # Add widgets
         self.addWidget(spacer)
-        self.sortingBoxAction = self.addWidget(self.sortingBox)
         self.addWidget(self.searchBar)
+        self.sortingBoxAction = self.addWidget(self.sortingBox)
 
 
 # Sublassing these widgets out prevents them from resizing
@@ -483,7 +478,7 @@ class FixedComboBox(QtWidgets.QComboBox):
     def __init__(self, parent=None):
         super(FixedComboBox, self).__init__(parent)
         screen_width = QtWidgets.QDesktopWidget().screenGeometry().width()
-        self.adjusted_size = screen_width // 4.8
+        self.adjusted_size = screen_width // 4.5
 
     def sizeHint(self):
         # This and the one below should adjust to screen size
@@ -494,7 +489,7 @@ class FixedLineEdit(QtWidgets.QLineEdit):
     def __init__(self, parent=None):
         super(FixedLineEdit, self).__init__(parent)
         screen_width = QtWidgets.QDesktopWidget().screenGeometry().width()
-        self.adjusted_size = screen_width // 4.8
+        self.adjusted_size = screen_width // 4.5
 
     def sizeHint(self):
         return QtCore.QSize(self.adjusted_size, 22)

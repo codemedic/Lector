@@ -1,5 +1,5 @@
 # This file is a part of Lector, a Qt based ebook reader
-# Copyright (C) 2017-18 BasioMeusPuga
+# Copyright (C) 2017-19 BasioMeusPuga
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,9 +19,12 @@
 
 import os
 import time
+import logging
 import zipfile
 
 from lector.rarfile import rarfile
+
+logger = logging.getLogger(__name__)
 
 
 class ParseCOMIC:
@@ -36,16 +39,24 @@ class ParseCOMIC:
             if self.book_extension[1] == '.cbz':
                 self.book = zipfile.ZipFile(
                     self.filename, mode='r', allowZip64=True)
-                self.image_list = [i.filename for i in self.book.infolist() if not i.is_dir()]
+                self.image_list = [
+                    i.filename for i in self.book.infolist()
+                    if not i.is_dir() and is_image(i.filename)]
 
             elif self.book_extension[1] == '.cbr':
                 self.book = rarfile.RarFile(self.filename)
-                self.image_list = [i.filename for i in self.book.infolist() if not i.isdir()]
+                self.image_list = [
+                    i.filename for i in self.book.infolist()
+                    if not i.isdir() and is_image(i.filename)]
 
             self.image_list.sort()
-        except:  # Specifying no exception here is warranted
-            print('Cannot parse ' + self.filename)
-            return
+            if not self.image_list:
+                return False
+
+            return True
+
+        except: # Specifying no exception here is warranted
+            return False
 
     def get_title(self):
         title = os.path.basename(self.book_extension[0]).strip(' ')
@@ -72,7 +83,15 @@ class ParseCOMIC:
         return None
 
     def get_contents(self):
-        file_settings = {'images_only': True}
-        contents = [(f'Page {count + 1}', i) for count, i in enumerate(self.image_list)]
+        image_number = len(self.image_list)
+        toc = [(1, f'Page {i + 1}', i + 1) for i in range(image_number)]
 
-        return contents, file_settings
+        # Return toc, content, images_only
+        return toc, self.image_list, True
+
+def is_image(filename):
+    valid_image_extensions = ['.png', '.jpg', '.bmp']
+    if os.path.splitext(filename)[1].lower() in valid_image_extensions:
+        return True
+    else:
+        return False
